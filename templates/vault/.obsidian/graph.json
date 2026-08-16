@@ -1,0 +1,72 @@
+{
+  "collapse-filter": false,
+  "search": "-path:References/Sources",
+  "showTags": false,
+  "showAttachments": false,
+  "hideUnresolved": true,
+  "showOrphans": false,
+  "collapse-color-groups": false,
+  "colorGroups": [
+    {
+      "query": "path:Life",
+      "color": {
+        "a": 1,
+        "rgb": 2792847
+      }
+    },
+    {
+      "query": "path:Projects",
+      "color": {
+        "a": 1,
+        "rgb": 4553629
+      }
+    },
+    {
+      "query": "path:Ideas",
+      "color": {
+        "a": 1,
+        "rgb": 15320170
+      }
+    },
+    {
+      "query": "path:People",
+      "color": {
+        "a": 1,
+        "rgb": 14048689
+      }
+    },
+    {
+      "query": "path:Work",
+      "color": {
+        "a": 1,
+        "rgb": 5420936
+      }
+    },
+    {
+      "query": "path:Career",
+      "color": {
+        "a": 1,
+        "rgb": 15167313
+      }
+    },
+    {
+      "query": "path:References -path:References/Sources",
+      "color": {
+        "a": 1,
+        "rgb": 7107965
+      }
+    }
+  ],
+  "collapse-display": false,
+  "showArrow": false,
+  "textFadeMultiplier": 0,
+  "nodeSizeMultiplier": 1,
+  "lineSizeMultiplier": 1,
+  "collapse-forces": false,
+  "centerStrength": 0.518713248970312,
+  "repelStrength": 10,
+  "linkStrength": 1,
+  "linkDistance": 250,
+  "scale": 1,
+  "close": false
+}
