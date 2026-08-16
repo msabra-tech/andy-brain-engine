@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import subprocess
+import datetime as dt
+import re
 from pathlib import Path
 from typing import Any
 
@@ -12,12 +14,25 @@ def notification_summary(config: Config) -> dict[str, Any]:
     source = config.vault / "00 Command Center/Needs Attention.md"
     lines = source.read_text(encoding="utf-8").splitlines() if source.exists() else []
     items = [line[2:] for line in lines if line.startswith("- ") and not line.startswith("- _")]
+    deadlines: list[str] = []
+    for item in items:
+        match = re.search(r"due\s+(\d{4}-\d{2}-\d{2})", item, flags=re.IGNORECASE)
+        if not match:
+            continue
+        try:
+            days_until = (dt.date.fromisoformat(match.group(1)) - dt.date.today()).days
+        except ValueError:
+            continue
+        if days_until <= 1:
+            deadlines.append(item)
     title = "Andy Brain review"
-    if items:
+    if deadlines:
+        body = f"{len(deadlines)} deadline(s) are due or overdue. {deadlines[0][:180]}"
+    elif items:
         body = f"{len(items)} item(s) need attention. {items[0][:180]}"
     else:
         body = "Your Command Center has no flagged items. Open Claude to review current work."
-    return {"title": title, "body": body, "items": items, "command_center": str(config.vault / "00 Command Center/Home.md")}
+    return {"title": title, "body": body, "items": items, "deadline_items": deadlines, "command_center": str(config.vault / "00 Command Center/Home.md")}
 
 
 def notification_script(config: Config) -> Path:

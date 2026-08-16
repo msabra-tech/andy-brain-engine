@@ -25,14 +25,14 @@ Claude is the assistant: it analyzes, groups, prioritizes, researches, and propo
 On Windows, run [Setup Andy Brain.cmd](<Setup Andy Brain.cmd>) or:
 
 ```powershell
-py -3 scripts\setup_windows.py
+py -3 scripts\setup_wizard.py
 ```
 
-The setup flow creates a local Obsidian vault, ignored local configuration, temporary staging, and the Command Center. It does not copy source documents into the vault.
+The wizard creates a local Obsidian vault, ignored local configuration, temporary staging, a safe local output folder, and the Command Center. It can also connect Google Drive, Notion, local folders, and a daily Windows reminder. It does not copy source documents into the vault. The CLI fallback is `py -3 scripts\setup_windows.py`.
 
 ## Source connectors
 
-The Google Drive and Notion connectors are read-only. They only deliver current excerpts to the active Claude review; the engine stores source metadata and hashes, not source bodies.
+Google Drive and Notion deliver current excerpts only to the active Claude review; the engine stores source metadata and hashes, not source bodies. They can also write a Claude-generated artifact only through a visible proposal and Andy's one-time confirmation for that specific write.
 
 On Andy's Windows machine, use the short commands below after setup:
 
@@ -55,7 +55,7 @@ After setup, configure Claude Desktop to run:
 python C:\Tools\andy-brain-engine\brain mcp
 ```
 
-The MCP server provides controlled tools for source sync, Command Center context, proposed updates, Chat Handoffs, presentation changes, and connector drafts. See [Claude Desktop integration](docs/CLAUDE_DESKTOP.md).
+The MCP server provides controlled tools for source sync, Command Center context, priority and research updates, Chat Handoffs, presentation/system changes, and approval-gated external writes. See [Claude Desktop integration](docs/CLAUDE_DESKTOP.md) and [the product specification](docs/PRODUCT_SPEC.md).
 
 ## Core commands
 

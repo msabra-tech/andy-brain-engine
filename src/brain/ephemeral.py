@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import datetime as dt
+import io
 import json
 from pathlib import Path
 from typing import Any
+import zipfile
 
 from .config import Config
 from .hashing import sha256_file
@@ -54,7 +56,24 @@ def _is_allowed(path: Path, roots: list[Path]) -> bool:
 
 
 def _excerpt(path: Path, limit: int) -> str:
-    if path.suffix.lower() not in TEXT_SUFFIXES:
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        try:
+            from pypdf import PdfReader  # type: ignore[import-not-found]
+        except ImportError:
+            return "[PDF discovered. Install optional pypdf support to extract text for Claude.]"
+        try:
+            return "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(path.read_bytes())).pages)[:limit]
+        except Exception as exc:
+            return f"[PDF text extraction failed: {exc}]"
+    if suffix == ".docx":
+        try:
+            with zipfile.ZipFile(path) as archive:
+                document = archive.read("word/document.xml").decode("utf-8", errors="replace")
+            return document.replace("</w:t>", " ").replace("<w:tab/>", " ").replace("<w:br/>", "\n")[:limit]
+        except (OSError, KeyError, zipfile.BadZipFile) as exc:
+            return f"[Word document text extraction failed: {exc}]"
+    if suffix not in TEXT_SUFFIXES:
         return f"[{path.suffix.lower() or 'binary'} file; text extraction is not configured]"
     try:
         text = path.read_text(encoding="utf-8", errors="replace")

@@ -47,6 +47,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--vault-title", default="Andy Brain")
     parser.add_argument("--vault-path")
     parser.add_argument("--staging-path")
+    parser.add_argument("--output-path")
+    parser.add_argument("--local-folder", action="append", default=[])
     parser.add_argument("--timezone", default=os.environ.get("TZ", "UTC"))
     parser.add_argument("--yes", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -60,16 +62,19 @@ def main(argv: list[str] | None = None) -> int:
     default_documents = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Documents"
     vault = Path(args.vault_path).expanduser() if args.vault_path else default_documents / slugify(args.vault_title)
     staging = Path(args.staging_path).expanduser() if args.staging_path else repo / "data/staging"
+    output = Path(args.output_path).expanduser() if args.output_path else default_documents / f"{slugify(args.vault_title)} Exports"
     print("Planned Andy Brain layout")
     print(f"  Engine:  {repo}")
     print(f"  Vault:   {vault}")
     print(f"  Staging: {staging}")
+    print(f"  Output:  {output}")
     if args.dry_run:
         print("Dry run only. No files will be written.")
         return 0
 
     vault.mkdir(parents=True, exist_ok=True)
     staging.mkdir(parents=True, exist_ok=True)
+    output.mkdir(parents=True, exist_ok=True)
     for relative in ENGINE_DIRS:
         (repo / relative).mkdir(parents=True, exist_ok=True)
     for relative in STAGING_DIRS:
@@ -94,7 +99,18 @@ def main(argv: list[str] | None = None) -> int:
             "review_time": "09:00",
         },
     )
-    write_json(repo / "config/sources.local.json", {"version": 1, "local_folders": [], "connectors": {"google_drive": {"status": "not_connected"}, "notion": {"status": "not_connected"}}})
+    write_json(
+        repo / "config/sources.local.json",
+        {
+            "version": 1,
+            "local_folders": [str(Path(folder).expanduser()) for folder in args.local_folder],
+            "local_output_folder": str(output),
+            "connectors": {
+                "google_drive": {"status": "not_connected", "mode": "approval_required"},
+                "notion": {"status": "not_connected", "mode": "approval_required"},
+            },
+        },
+    )
     from pathlib import Path as _Path
     sys.path.insert(0, str(repo / "src"))
     from brain.command_center import publish_command_center

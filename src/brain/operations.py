@@ -19,6 +19,7 @@ HANDOFFS = Path("40 Chat Handoffs")
 ARCHIVE = Path("90 Archive")
 PROPOSALS_PATH = Path("data/state/proposals.json")
 PRESENTATION_PATH = Path("config/presentation.local.json")
+PRIORITIES = {"Critical", "High", "Normal", "Low"}
 
 
 def now() -> str:
@@ -143,14 +144,22 @@ def ensure_workstream(config: Config, title: str, priority: str = "Normal", stat
                     "title": title,
                     "status": status,
                     "priority": priority,
+                    "priority_score": "",
+                    "priority_reasoning": "",
                     "updated": now(),
                     "andy_override": "",
+                    "andy_priority_score_override": "",
+                    "andy_priority_reasoning": "",
                 }
             )
-            + f"\n\n# {title}\n\n## Current understanding\n\n_No approved summary yet._\n\n## Navigation\n\n- [[{(relative / 'Updates').as_posix()}|Updates]]\n- [[{(relative / 'Open Threads').as_posix()}|Open threads]]\n- [[{(relative / 'Research').as_posix()}|Research]]\n- [[{(relative / 'Sources').as_posix()}|Source links]]\n",
+            + f"\n\n# {title}\n\n## Current understanding\n\n_No approved summary yet._\n\n## Navigation\n\n"
+            + "\n".join(f"- [[{(relative / section).as_posix()}|{section}]]" for section in presentation_profile(config).get("workstream_sections", ["Updates", "Open Threads", "Research", "Sources"]))
+            + "\n",
             encoding="utf-8",
         )
-    for name, heading in [("Updates", "Updates"), ("Open Threads", "Open Threads"), ("Research", "Research"), ("Sources", "Source Links")]:
+    headings = {"Updates": "Updates", "Open Threads": "Open Threads", "Research": "Research", "Sources": "Source Links"}
+    for name in presentation_profile(config).get("workstream_sections", ["Updates", "Open Threads", "Research", "Sources"]):
+        heading = headings.get(name, name)
         target = root / f"{name}.md"
         if not target.exists():
             target.write_text(f"# {heading}\n", encoding="utf-8")
@@ -163,20 +172,40 @@ def propose_workstream_update(
     title: str,
     summary: str,
     priority: str = "Normal",
+    priority_score: int | None = None,
+    priority_reasoning: str = "",
     recommendation: str = "",
     people: list[str] | None = None,
     source_links: list[str] | None = None,
     open_threads: list[str] | None = None,
+    follow_ups: list[dict[str, str]] | None = None,
     research: str = "",
 ) -> dict[str, Any]:
+    normalized_priority = markdown_escape(priority).title()
+    if normalized_priority not in PRIORITIES:
+        raise ValueError(f"priority must be one of: {', '.join(sorted(PRIORITIES))}")
+    if priority_score is not None and not 0 <= int(priority_score) <= 100:
+        raise ValueError("priority_score must be between 0 and 100")
+    normalized_follow_ups = [
+        {
+            "text": markdown_escape(str(item.get("text", ""))),
+            "due_date": markdown_escape(str(item.get("due_date", ""))),
+            "reason": markdown_escape(str(item.get("reason", ""))),
+        }
+        for item in follow_ups or []
+        if str(item.get("text", "")).strip()
+    ]
     payload = {
         "title": markdown_escape(title),
         "summary": summary.strip(),
-        "priority": markdown_escape(priority),
+        "priority": normalized_priority,
+        "priority_score": int(priority_score) if priority_score is not None else None,
+        "priority_reasoning": priority_reasoning.strip(),
         "recommendation": recommendation.strip(),
         "people": [markdown_escape(person) for person in people or [] if person.strip()],
         "source_links": [link.strip() for link in source_links or [] if link.strip()],
         "open_threads": [thread.strip() for thread in open_threads or [] if thread.strip()],
+        "follow_ups": normalized_follow_ups,
         "research": research.strip(),
     }
     return create_proposal(config, "workstream_update", f"Update {payload['title']}", payload)
@@ -202,6 +231,10 @@ def _apply_workstream_update(config: Config, payload: dict[str, Any]) -> list[st
     metadata, body = _read_frontmatter(overview)
     if not metadata.get("andy_override"):
         metadata["priority"] = payload.get("priority", "Normal")
+        if payload.get("priority_score") is not None:
+            metadata["priority_score"] = str(payload["priority_score"])
+        if payload.get("priority_reasoning"):
+            metadata["priority_reasoning"] = payload["priority_reasoning"]
     metadata["updated"] = now()
     _write_frontmatter(overview, metadata, body)
 
@@ -211,8 +244,13 @@ def _apply_workstream_update(config: Config, payload: dict[str, Any]) -> list[st
         update += f"\n\n**Claude recommendation:** {payload['recommendation']}"
     _append(root / "Updates.md", update)
 
-    if payload.get("open_threads"):
-        _append(root / "Open Threads.md", "\n".join(f"- [ ] {item}" for item in payload["open_threads"]))
+    if payload.get("open_threads") or payload.get("follow_ups"):
+        lines = [f"- [ ] {item}" for item in payload.get("open_threads", [])]
+        for follow_up in payload.get("follow_ups", []):
+            due = f" _(due {follow_up['due_date']})_" if follow_up.get("due_date") else ""
+            reason = f" — {follow_up['reason']}" if follow_up.get("reason") else ""
+            lines.append(f"- [ ] {follow_up['text']}{due}{reason}")
+        _append(root / "Open Threads.md", "\n".join(lines))
     if payload.get("research"):
         _append(root / "Research.md", f"## {stamp}\n\n{payload['research']}")
     if payload.get("source_links"):
@@ -227,6 +265,138 @@ def _apply_workstream_update(config: Config, payload: dict[str, Any]) -> list[st
             _append(person_path, link)
         changed.append(str(person_relative))
     return changed
+
+
+def propose_priority_override(
+    config: Config,
+    *,
+    title: str,
+    priority: str,
+    priority_score: int | None = None,
+    reasoning: str = "",
+) -> dict[str, Any]:
+    normalized_priority = markdown_escape(priority).title()
+    if normalized_priority not in PRIORITIES:
+        raise ValueError(f"priority must be one of: {', '.join(sorted(PRIORITIES))}")
+    if priority_score is not None and not 0 <= int(priority_score) <= 100:
+        raise ValueError("priority_score must be between 0 and 100")
+    return create_proposal(
+        config,
+        "priority_override",
+        f"Set Andy's priority override for {markdown_escape(title)}",
+        {"title": markdown_escape(title), "priority": normalized_priority, "priority_score": int(priority_score) if priority_score is not None else None, "reasoning": reasoning.strip()},
+    )
+
+
+def _apply_priority_override(config: Config, payload: dict[str, Any]) -> list[str]:
+    relative = ensure_workstream(config, payload["title"], payload["priority"])
+    overview = vault_path(config, relative / "Overview.md")
+    metadata, body = _read_frontmatter(overview)
+    metadata["andy_override"] = payload["priority"]
+    metadata["andy_priority_score_override"] = "" if payload.get("priority_score") is None else str(payload["priority_score"])
+    metadata["andy_priority_reasoning"] = payload.get("reasoning", "")
+    metadata["updated"] = now()
+    _write_frontmatter(overview, metadata, body)
+    _append(
+        vault_path(config, relative / "Updates.md"),
+        f"## {now()}\n\n**Andy priority override:** {payload['priority']}"
+        + (f" · {payload['priority_score']}/100" if payload.get("priority_score") is not None else "")
+        + (f"\n\n**Reason:** {payload['reasoning']}" if payload.get("reasoning") else ""),
+    )
+    return [str(relative / "Overview.md"), str(relative / "Updates.md")]
+
+
+def propose_research_update(
+    config: Config,
+    *,
+    title: str,
+    question: str,
+    findings: str,
+    evidence_links: list[str] | None = None,
+    recommendation: str = "",
+    next_steps: list[str] | None = None,
+) -> dict[str, Any]:
+    return create_proposal(
+        config,
+        "research_update",
+        f"Add research to {markdown_escape(title)}",
+        {
+            "title": markdown_escape(title),
+            "question": question.strip(),
+            "findings": findings.strip(),
+            "evidence_links": [item.strip() for item in evidence_links or [] if item.strip()],
+            "recommendation": recommendation.strip(),
+            "next_steps": [item.strip() for item in next_steps or [] if item.strip()],
+        },
+    )
+
+
+def _apply_research_update(config: Config, payload: dict[str, Any]) -> list[str]:
+    relative = ensure_workstream(config, payload["title"])
+    profile = presentation_profile(config)
+    research_section = profile.get("research_target") or ("Research" if "Research" in profile.get("workstream_sections", []) else "Updates")
+    research = vault_path(config, relative / f"{research_section}.md")
+    entry = f"## {now()} · {payload['question']}\n\n{payload['findings']}"
+    if payload.get("evidence_links"):
+        entry += "\n\n### Evidence\n\n" + "\n".join(f"- {item}" for item in payload["evidence_links"])
+    if payload.get("recommendation"):
+        entry += f"\n\n### Claude recommendation\n\n{payload['recommendation']}"
+    if payload.get("next_steps"):
+        entry += "\n\n### Suggested next steps\n\n" + "\n".join(f"- [ ] {item}" for item in payload["next_steps"])
+    _append(research, entry)
+    return [str(relative / f"{research_section}.md")]
+
+
+def propose_external_write(
+    config: Config,
+    *,
+    connector: str,
+    title: str,
+    content: str,
+    target: str = "",
+) -> dict[str, Any]:
+    if connector not in {"google_drive", "notion", "local_file"}:
+        raise ValueError("connector must be google_drive, notion, or local_file")
+    if not title.strip() or not content.strip():
+        raise ValueError("external-write proposals require a title and content")
+    return create_proposal(
+        config,
+        "external_write",
+        f"Write '{markdown_escape(title)}' to {connector} after Andy approval",
+        {"connector": connector, "title": markdown_escape(title), "content": content, "target": target.strip(), "approval_required": True},
+    )
+
+
+def _apply_external_write(config: Config, payload: dict[str, Any]) -> list[str]:
+    from .connectors import write_external_artifact
+
+    result = write_external_artifact(config, payload)
+    location = result.get("url") or result.get("path") or result.get("id") or payload["title"]
+    return [f"{result.get('connector', payload['connector'])}: {location}"]
+
+
+def propose_system_change(config: Config, *, title: str, summary: str, patch: str) -> dict[str, Any]:
+    """Stage a Claude-authored code change in an isolated workspace before approval."""
+    proposal = create_proposal(
+        config,
+        "system_change",
+        summary,
+        {"title": markdown_escape(title), "patch": patch, "preflight": None, "approval_required": True},
+    )
+    from .system_evolution import stage_system_change
+
+    preflight = stage_system_change(config, proposal["id"], patch)
+    state, stored = _find_proposal(config, proposal["id"])
+    stored["payload"]["preflight"] = preflight
+    _write_proposals(config, state)
+    return stored
+
+
+def _apply_system_change(config: Config, proposal_id: str, payload: dict[str, Any]) -> list[str]:
+    from .system_evolution import install_system_change
+
+    result = install_system_change(config, proposal_id, payload["patch"], payload.get("preflight") or {})
+    return [f"engine backup: {result['backup']}", *result.get("affected_files", [])]
 
 
 def save_chat_handoff(
@@ -258,7 +428,8 @@ def save_chat_handoff(
 def presentation_profile(config: Config) -> dict[str, Any]:
     default = {
         "version": 1,
-        "home_sections": ["needs_attention", "michael", "active_work", "decisions", "handoff"],
+        "home_sections": ["needs_attention", "michael", "active_work", "open_threads", "decisions", "handoff"],
+        "workstream_sections": ["Updates", "Open Threads", "Research", "Sources"],
         "labels": {"active_work": "Active Work", "decisions": "Decisions and Insights"},
     }
     path = config.engine / PRESENTATION_PATH
@@ -268,12 +439,12 @@ def presentation_profile(config: Config) -> dict[str, Any]:
     return {**default, **data}
 
 
-def propose_presentation_change(config: Config, summary: str, profile_updates: dict[str, Any]) -> dict[str, Any]:
+def propose_presentation_change(config: Config, summary: str, profile_updates: dict[str, Any], migration: dict[str, Any] | None = None) -> dict[str, Any]:
     return create_proposal(
         config,
         "presentation_change",
         summary,
-        {"profile_updates": profile_updates, "backup_required": True},
+        {"profile_updates": profile_updates, "migration": migration or {}, "backup_required": True},
     )
 
 
@@ -288,8 +459,17 @@ def _apply_presentation_change(config: Config, payload: dict[str, Any]) -> list[
     profile.update(payload.get("profile_updates", {}))
     if payload.get("backup_required"):
         _backup_vault(config)
+    migration = payload.get("migration", {})
+    archived: list[str] = []
+    for section in migration.get("archive_workstream_sections", []):
+        safe_section = slugify(str(section)).replace("-", " ")
+        for source in vault_path(config, WORKSTREAMS).glob(f"*/{safe_section}.md"):
+            target = vault_path(config, ARCHIVE / "Presentation Migrations" / now().replace(":", "-") / source.relative_to(config.vault))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source), str(target))
+            archived.append(str(target.relative_to(config.vault)))
     write_json(config.engine / PRESENTATION_PATH, profile)
-    return [str(PRESENTATION_PATH)]
+    return [str(PRESENTATION_PATH), *archived]
 
 
 def apply_proposal(config: Config, proposal_id: str, confirmed: bool) -> dict[str, Any]:
@@ -300,6 +480,14 @@ def apply_proposal(config: Config, proposal_id: str, confirmed: bool) -> dict[st
         raise ValueError(f"proposal is already {proposal.get('status')}")
     if proposal["kind"] == "workstream_update":
         changed = _apply_workstream_update(config, proposal["payload"])
+    elif proposal["kind"] == "priority_override":
+        changed = _apply_priority_override(config, proposal["payload"])
+    elif proposal["kind"] == "research_update":
+        changed = _apply_research_update(config, proposal["payload"])
+    elif proposal["kind"] == "external_write":
+        changed = _apply_external_write(config, proposal["payload"])
+    elif proposal["kind"] == "system_change":
+        changed = _apply_system_change(config, proposal_id, proposal["payload"])
     elif proposal["kind"] == "presentation_change":
         changed = _apply_presentation_change(config, proposal["payload"])
     else:

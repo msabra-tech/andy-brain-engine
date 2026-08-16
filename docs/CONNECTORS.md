@@ -2,11 +2,11 @@
 
 Andy Brain reads sources only when Andy or Claude explicitly asks it to. The connector response is temporary: the engine stores only a source identifier, name, link, timestamp, type, and content hash in its local ledger. It does not retain page/document contents.
 
-Both connectors are read-only in this release. The existing approval pipeline remains the only way to create or alter refined Obsidian artifacts. Future external writes will require a separate proposal and Andy's confirmation every time.
+Both connectors can read broadly across Andy's authorized account and can create generated artifacts, but the engine never gives Claude an unattended write command. Claude must show Andy a proposal preview; each Drive or Notion write is a separate `apply_proposal` confirmation.
 
 ## Google Drive
 
-The connector uses a Google Cloud **Desktop app** OAuth client and the `drive.readonly` scope. It lists Andy's user corpus—including files shared with him—and includes Shared Drive support. This is an account-level consent from Andy; no Google credentials are committed or placed in the vault.
+The connector uses a Google Cloud **Desktop app** OAuth client and the `drive` scope. It lists Andy's user corpus—including files shared with him—and includes Shared Drive support. The broad OAuth grant is necessary for the user-approved write capability, but the local proposal engine gates every actual write. No Google credentials are committed or placed in the vault.
 
 1. In the JDS Google Cloud project, enable the Google Drive API.
 2. Create an OAuth client for a **Desktop app** and download its JSON file.
@@ -17,7 +17,7 @@ The connector uses a Google Cloud **Desktop app** OAuth client and the `drive.re
    brain connectors google-drive authorize
    ```
 
-4. A normal system-browser Google consent page opens. Andy signs in to the intended JDS Google Workspace account and grants read-only Drive access.
+4. A normal system-browser Google consent page opens. Andy signs in to the intended JDS Google Workspace account and grants the requested Drive access.
 5. The OAuth client and refresh token are encrypted with Windows DPAPI for Andy's Windows account. They remain under ignored `data/state/secrets/` files, never in the vault or Git.
 
 The authorization flow uses PKCE and a loopback callback, as recommended for desktop applications. It must be completed on the actual Windows machine, not through Claude chat.
@@ -35,7 +35,7 @@ For a one-person local tool, configure a Notion **Personal Access Token (PAT)** 
 
 3. Paste the PAT at the hidden prompt. The token is encrypted with Windows DPAPI in ignored local state.
 
-The connector searches currently visible pages and retrieves their enhanced Markdown only for an active Claude request. It calls Notion API version `2026-03-11` and does not read or retain Notion content outside that response.
+The connector searches currently visible pages and retrieves their enhanced Markdown only for an active Claude request. It calls Notion API version `2026-03-11` and does not read or retain Notion content outside that response. Give the PAT Notion's insert-content capability if Andy wants to publish approved generated pages.
 
 ## Using connectors with Claude
 
@@ -44,8 +44,10 @@ Once configured, ask Claude Desktop to use one of these MCP tools:
 - `sync_google_drive` — optionally pass a Drive query or file IDs.
 - `sync_notion` — optionally pass a Notion title query or page IDs.
 - `connector_status` — confirms configuration without exposing any credential.
+- `propose_external_write` — creates a preview for a generated Drive file, Notion page, or local output file; it does not write yet.
+- `apply_proposal` — performs that one external write only when Andy explicitly confirms it.
 
-Claude should inspect the excerpts, explain the recommended workstream update, and ask Andy before calling the proposal application tools. It cannot silently write to Drive, Notion, or the vault.
+Claude should inspect the excerpts, explain the recommended workstream update, and ask Andy before calling the proposal application tools. It cannot silently write to Drive, Notion, local files, or the vault.
 
 ## Optional PDF text extraction
 

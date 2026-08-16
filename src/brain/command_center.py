@@ -22,6 +22,8 @@ def _workstreams(config: Config) -> list[dict[str, str]]:
             {
                 "title": metadata.get("title", overview.parent.name),
                 "priority": metadata.get("andy_override") or metadata.get("priority", "Normal"),
+                "priority_score": metadata.get("andy_priority_score_override") or metadata.get("priority_score", ""),
+                "priority_reasoning": metadata.get("andy_priority_reasoning") or metadata.get("priority_reasoning", ""),
                 "status": metadata.get("status", "active"),
                 "updated": metadata.get("updated", ""),
                 "relative": relative.with_suffix(""),
@@ -48,6 +50,12 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text.rstrip() + "\n", encoding="utf-8")
 
 
+def _priority_label(workstream: dict[str, str]) -> str:
+    score = f" · {workstream['priority_score']}/100" if workstream.get("priority_score") else ""
+    reasoning = f" — {workstream['priority_reasoning']}" if workstream.get("priority_reasoning") else ""
+    return f"{workstream['priority']}{score}{reasoning}"
+
+
 def publish_command_center(config: Config, runtime: RuntimeConfig | None = None) -> None:
     ensure_layout(config)
     runtime = runtime or RuntimeConfig()
@@ -55,12 +63,22 @@ def publish_command_center(config: Config, runtime: RuntimeConfig | None = None)
     workstreams = _workstreams(config)
     open_threads = _open_threads(config, workstreams)
     high_priority = [item for item in workstreams if item["priority"] in {"Critical", "High"}]
-    work_links = [f"- {_link(Path(item['relative']), item['title'])} · {item['priority']}" for item in workstreams]
-    attention = [f"- {_link(Path(item['relative']), item['title'])} · {item['priority']} priority" for item in high_priority]
+    work_links = [f"- {_link(Path(item['relative']), item['title'])} · {_priority_label(item)}" for item in workstreams]
+    attention = [f"- {_link(Path(item['relative']), item['title'])} · {_priority_label(item)}" for item in high_priority]
     handoff = HANDOFFS / "Current Context.md"
     current_handoff = _link(handoff, "Continue from the latest Claude handoff") if vault_path(config, handoff).exists() else "_No saved handoff yet._"
 
     labels = profile.get("labels", {})
+    sections = {
+        "needs_attention": "## Needs Attention\n\n" + ("\n".join(attention) if attention else "- _No high-priority workstreams yet._"),
+        "michael": "## Michael and leadership context\n\n- [[20 People/Michael|Michael]]\n- [[00 Command Center/Michael Meeting Prep|Michael Meeting Prep]]",
+        "active_work": f"## {labels.get('active_work', 'Active Work')}\n\n" + ("\n".join(work_links) if work_links else "- _No approved workstreams yet._"),
+        "open_threads": "## Open threads\n\n" + ("\n".join(open_threads[:12]) if open_threads else "- _No open threads recorded._"),
+        "decisions": f"## {labels.get('decisions', 'Decisions and Insights')}\n\n- [[30 Decisions and Insights/Decisions|Decisions]]\n- [[30 Decisions and Insights/Open Questions|Open Questions]]",
+        "handoff": f"## Continue working\n\n{current_handoff}",
+    }
+    requested_order = profile.get("home_sections", list(sections))
+    ordered_sections = [sections[name] for name in requested_order if name in sections]
     home = f"""---
 type: command-center
 updated: {dt.date.today().isoformat()}
@@ -68,32 +86,7 @@ updated: {dt.date.today().isoformat()}
 
 # {runtime.vault_title} Command Center
 
-## Needs Attention
-
-{chr(10).join(attention) if attention else "- _No high-priority workstreams yet._"}
-
-## Michael and leadership context
-
-- [[20 People/Michael|Michael]]
-- [[00 Command Center/Michael Meeting Prep|Michael Meeting Prep]]
-
-## {labels.get('active_work', 'Active Work')}
-
-{chr(10).join(work_links) if work_links else "- _No approved workstreams yet._"}
-
-## Open threads
-
-{chr(10).join(open_threads[:12]) if open_threads else "- _No open threads recorded._"}
-
-## {labels.get('decisions', 'Decisions and Insights')}
-
-- [[30 Decisions and Insights/Decisions|Decisions]]
-- [[30 Decisions and Insights/Open Questions|Open Questions]]
-
-## Continue working
-
-{current_handoff}
-"""
+""" + "\n\n".join(ordered_sections) + "\n"
     _write(vault_path(config, COMMAND_CENTER / "Home.md"), home)
     _write(vault_path(config, "Home.md"), f"# {runtime.vault_title}\n\n- {_link(COMMAND_CENTER / 'Home.md', 'Open the Command Center')}\n")
 

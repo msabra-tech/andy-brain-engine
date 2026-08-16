@@ -22,5 +22,5 @@ def build_status(config: Config, runtime: RuntimeConfig, test_codex: bool = True
         "pending_proposals": len(list_proposals(config)),
         "connectors": connector_status(config),
         "raw_source_retention": False,
-        "daily_review_mode": "Claude scheduled draft plus Windows notification bridge",
+        "daily_review_mode": "Windows Task Scheduler notification; Claude review remains on demand through the local MCP server",
     }

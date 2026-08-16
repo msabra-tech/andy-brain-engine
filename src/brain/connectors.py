@@ -26,7 +26,9 @@ LEDGER_PATH = Path("data/state/source-ledger.json")
 GOOGLE_CLIENT_SECRET = "google_drive_client"
 GOOGLE_TOKEN_SECRET = "google_drive_tokens"
 NOTION_TOKEN_SECRET = "notion_token"
-GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+# Andy explicitly chose account-level access. The engine, not OAuth alone, enforces
+# the important boundary: every write must originate from an approved proposal.
+GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive"
 NOTION_VERSION = "2026-03-11"
 
 JsonRequest = Callable[[str, str, dict[str, str], dict[str, Any] | None], dict[str, Any]]
@@ -44,12 +46,12 @@ def _save_source_config(config: Config, source_config: dict[str, Any]) -> None:
 def _connector_settings(config: Config, name: str) -> dict[str, Any]:
     settings = _source_config(config)
     connectors = settings.setdefault("connectors", {})
-    return connectors.setdefault(name, {"status": "not_connected", "mode": "read_only"})
+    return connectors.setdefault(name, {"status": "not_connected", "mode": "approval_required"})
 
 
 def _set_connector_settings(config: Config, name: str, updates: dict[str, Any]) -> None:
     settings = _source_config(config)
-    connector = settings.setdefault("connectors", {}).setdefault(name, {"status": "not_connected", "mode": "read_only"})
+    connector = settings.setdefault("connectors", {}).setdefault(name, {"status": "not_connected", "mode": "approval_required"})
     connector.update(updates)
     _save_source_config(config, settings)
 
@@ -90,6 +92,16 @@ def _request_bytes(method: str, url: str, headers: dict[str, str]) -> bytes:
         raise RuntimeError(f"connector download failed ({exc.code}): {body}") from exc
 
 
+def _request_json_bytes(method: str, url: str, headers: dict[str, str], body: bytes) -> dict[str, Any]:
+    request = urllib.request.Request(url, data=body, headers={"Accept": "application/json", **headers}, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")[:800]
+        raise RuntimeError(f"connector write failed ({exc.code}): {error_body}") from exc
+
+
 def _public_connector_settings(settings: dict[str, Any]) -> dict[str, Any]:
     """Defensively prevent a mistaken local config value from becoming MCP output."""
     sensitive_markers = ("token", "secret", "password", "authorization", "credential")
@@ -103,9 +115,9 @@ def connector_status(config: Config) -> dict[str, Any]:
     notion = _public_connector_settings(dict(connectors.get("notion", {})))
     google["credential_configured"] = secret_configured(config, GOOGLE_CLIENT_SECRET)
     google["token_configured"] = secret_configured(config, GOOGLE_TOKEN_SECRET)
-    google["mode"] = "read_only"
+    google["mode"] = "approval_required"
     notion["token_configured"] = secret_configured(config, NOTION_TOKEN_SECRET)
-    notion["mode"] = "read_only"
+    notion["mode"] = "approval_required"
     return {
         "local_folders": settings.get("local_folders", []),
         "connectors": {"google_drive": google, "notion": notion},
@@ -126,12 +138,12 @@ def import_google_drive_client(config: Config, client_file: str) -> dict[str, An
         "google_drive",
         {
             "status": "client_configured",
-            "mode": "read_only",
+            "mode": "approval_required",
             "scope": GOOGLE_SCOPE,
             "configured_at": _now(),
         },
     )
-    return {"configured": True, "connector": "google_drive", "mode": "read_only", "next_step": "Run `brain connectors google-drive authorize` on Andy's Windows machine."}
+    return {"configured": True, "connector": "google_drive", "mode": "approval_required", "next_step": "Run `brain connectors google-drive authorize` on Andy's Windows machine."}
 
 
 def _google_client(config: Config) -> dict[str, Any]:
@@ -244,8 +256,8 @@ def authorize_google_drive(config: Config, timeout_seconds: int = 300) -> dict[s
         raise RuntimeError("Google did not return a refresh token. Re-run authorization and approve access.")
     tokens["obtained_at"] = _now()
     store_secret(config, GOOGLE_TOKEN_SECRET, json.dumps(tokens))
-    _set_connector_settings(config, "google_drive", {"status": "connected", "mode": "read_only", "scope": GOOGLE_SCOPE, "connected_at": _now()})
-    return {"connected": True, "connector": "google_drive", "mode": "read_only", "scope": GOOGLE_SCOPE}
+    _set_connector_settings(config, "google_drive", {"status": "connected", "mode": "approval_required", "scope": GOOGLE_SCOPE, "connected_at": _now()})
+    return {"connected": True, "connector": "google_drive", "mode": "approval_required", "scope": GOOGLE_SCOPE}
 
 
 def _google_access_token(config: Config) -> str:
@@ -346,14 +358,43 @@ def sync_google_drive(
     return {"records": records, "temporary": True, "connector": "google_drive", "retention": "No Google Drive source body was stored. Excerpts exist only in this tool response.", "query": query}
 
 
+def write_google_drive_text(config: Config, *, title: str, content: str, folder_id: str = "") -> dict[str, Any]:
+    """Upload a text artifact after an external-write proposal has been confirmed."""
+    access_token = _google_access_token(config)
+    metadata: dict[str, Any] = {"name": title, "mimeType": "text/markdown"}
+    if folder_id.strip():
+        metadata["parents"] = [folder_id.strip()]
+    boundary = "andy-brain-" + secrets.token_hex(16)
+    body = (
+        f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n".encode("utf-8")
+        + json.dumps(metadata).encode("utf-8")
+        + f"\r\n--{boundary}\r\nContent-Type: text/markdown; charset=UTF-8\r\n\r\n".encode("utf-8")
+        + content.encode("utf-8")
+        + f"\r\n--{boundary}--\r\n".encode("utf-8")
+    )
+    response = _request_json_bytes(
+        "POST",
+        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,webViewLink",
+        {"Authorization": f"Bearer {access_token}", "Content-Type": f"multipart/related; boundary={boundary}", "Content-Length": str(len(body))},
+        body,
+    )
+    return {
+        "connector": "google_drive",
+        "action": "upload_text",
+        "id": response.get("id"),
+        "name": response.get("name", title),
+        "url": response.get("webViewLink") or (f"https://drive.google.com/open?id={response['id']}" if response.get("id") else None),
+    }
+
+
 def configure_notion_token(config: Config, token: str) -> dict[str, Any]:
     """Store a Notion Personal Access Token encrypted for Andy's Windows account."""
     token = token.strip()
     if not token:
         raise ValueError("Notion token cannot be empty")
     store_secret(config, NOTION_TOKEN_SECRET, token)
-    _set_connector_settings(config, "notion", {"status": "connected", "mode": "read_only", "api_version": NOTION_VERSION, "connected_at": _now(), "authentication": "personal_access_token"})
-    return {"configured": True, "connector": "notion", "mode": "read_only", "authentication": "personal_access_token"}
+    _set_connector_settings(config, "notion", {"status": "connected", "mode": "approval_required", "api_version": NOTION_VERSION, "connected_at": _now(), "authentication": "personal_access_token"})
+    return {"configured": True, "connector": "notion", "mode": "approval_required", "authentication": "personal_access_token"}
 
 
 def _notion_headers(config: Config) -> dict[str, str]:
@@ -421,3 +462,50 @@ def sync_notion(
         records.append({"source_id": source_id, "name": _notion_title(page), "locator": locator, "modified_at": page.get("last_edited_time"), "excerpt": excerpt})
     _write_ledger(config, ledger)
     return {"records": records, "temporary": True, "connector": "notion", "retention": "No Notion source body was stored. Excerpts exist only in this tool response.", "query": query}
+
+
+def write_notion_markdown(config: Config, *, title: str, content: str, parent_page_id: str = "") -> dict[str, Any]:
+    """Create a Notion page after an external-write proposal has been confirmed."""
+    markdown = content.strip()
+    if not markdown.startswith("# "):
+        markdown = f"# {title.strip()}\n\n{markdown}"
+    parent: dict[str, Any] = {"page_id": parent_page_id.strip()} if parent_page_id.strip() else {"workspace": True}
+    response = _request_json("POST", "https://api.notion.com/v1/pages", _notion_headers(config), {"parent": parent, "markdown": markdown})
+    return {"connector": "notion", "action": "create_page", "id": response.get("id"), "name": title, "url": response.get("url")}
+
+
+def _local_output_folder(config: Config) -> Path:
+    value = _source_config(config).get("local_output_folder", "")
+    if not value:
+        raise RuntimeError("No local output folder is configured. Run the Windows setup wizard first.")
+    path = Path(value).expanduser().resolve()
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def write_local_text(config: Config, *, relative_path: str, content: str) -> dict[str, Any]:
+    """Save an approved generated artifact under the configured local output folder."""
+    root = _local_output_folder(config)
+    target = Path(relative_path)
+    if target.is_absolute() or ".." in target.parts or not target.name:
+        raise ValueError("local output path must be a relative file path inside Andy Brain's output folder")
+    destination = (root / target).resolve()
+    try:
+        destination.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("local output path escapes Andy Brain's output folder") from exc
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(content, encoding="utf-8")
+    return {"connector": "local_file", "action": "save_text", "path": str(destination), "name": destination.name}
+
+
+def write_external_artifact(config: Config, payload: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch a confirmed, synthesized external-write proposal to its connector."""
+    connector = payload.get("connector")
+    if connector == "google_drive":
+        return write_google_drive_text(config, title=payload["title"], content=payload["content"], folder_id=payload.get("target", ""))
+    if connector == "notion":
+        return write_notion_markdown(config, title=payload["title"], content=payload["content"], parent_page_id=payload.get("target", ""))
+    if connector == "local_file":
+        return write_local_text(config, relative_path=payload.get("target") or payload["title"], content=payload["content"])
+    raise ValueError(f"unsupported external connector: {connector}")
