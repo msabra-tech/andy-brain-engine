@@ -6,9 +6,12 @@ __pycache__/
 !.env.example
 config/paths.local.json
 config/integrations.local.json
+config/sources.local.json
 data/raw/
+data/staging/
 data/logs/
 data/backups/
+data/workspaces/
 data/quarantine/
 data/state/*.json
 data/state/apple-reminder-mappings.json
@@ -19,5 +22,6 @@ data/state/*.local.json
 config/runtime.local.json
 data/locks/
 scripts/runner/
+scripts/windows/
 launchd/*.plist
 !launchd/*.plist.template
