@@ -118,16 +118,6 @@ def sync_local_sources(
     }
 
 
-def connector_status(config: Config) -> dict[str, Any]:
-    settings = source_config(config)
-    connectors = settings.get("connectors", {})
-    return {
-        "local_folders": settings.get("local_folders", []),
-        "connectors": connectors,
-        "note": "OAuth credentials and source content are intentionally not stored in repository configuration.",
-    }
-
-
 def draft_connector(config: Config, name: str, purpose: str, requested_capabilities: list[str]) -> dict[str, Any]:
     path = config.engine / "data/state/connector-drafts.json"
     state = read_json(path, {"version": 1, "drafts": []})

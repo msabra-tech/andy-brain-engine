@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .config import Config, RuntimeConfig
-from .ephemeral import connector_status
+from .connectors import connector_status
 from .operations import list_proposals
 from .state import read_json
 

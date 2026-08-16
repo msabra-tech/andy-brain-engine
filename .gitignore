@@ -19,6 +19,7 @@ data/state/ingestion.json
 data/state/legacy-vault/
 data/state/migration-log.json
 data/state/*.local.json
+data/state/secrets/
 config/runtime.local.json
 data/locks/
 scripts/runner/

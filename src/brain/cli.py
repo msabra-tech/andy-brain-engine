@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 
 from .command_center import publish_command_center
 from .config import load_config, load_runtime
+from .connectors import authorize_google_drive, configure_notion_token, import_google_drive_client, sync_google_drive, sync_notion
 from .ephemeral import sync_local_sources
 from .lock import BrainLock, BrainLockActive
 from .operations import apply_proposal, list_proposals
@@ -25,6 +27,20 @@ def main(argv: list[str] | None = None) -> int:
     sync = sub.add_parser("sync", help="Return temporary excerpts from approved local sources.")
     sync.add_argument("paths", nargs="*")
     sync.add_argument("--max-items", type=int, default=20)
+    sync.add_argument("--connector", choices=["local", "google-drive", "notion"], default="local")
+    sync.add_argument("--query")
+
+    connectors = sub.add_parser("connectors", help="Configure or authorize read-only source connectors on Andy's Windows machine.")
+    connector_sub = connectors.add_subparsers(dest="connector_name", required=True)
+    google_drive = connector_sub.add_parser("google-drive", help="Configure the Google Drive read-only connector.")
+    google_drive_sub = google_drive.add_subparsers(dest="connector_action", required=True)
+    import_client = google_drive_sub.add_parser("import-client", help="Securely import a Google Desktop OAuth client JSON file.")
+    import_client.add_argument("client_file")
+    authorize_google = google_drive_sub.add_parser("authorize", help="Open the browser consent flow for Drive read-only access.")
+    authorize_google.add_argument("--timeout", type=int, default=300)
+    notion = connector_sub.add_parser("notion", help="Configure the Notion read-only connector.")
+    notion_sub = notion.add_subparsers(dest="connector_action", required=True)
+    notion_sub.add_parser("authorize", help="Prompt securely for Andy's Notion Personal Access Token.")
 
     proposals = sub.add_parser("proposals", help="Inspect or apply Claude-proposed changes.")
     proposal_sub = proposals.add_subparsers(dest="proposal_command", required=True)
@@ -56,6 +72,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "status":
         return _print(build_status(config, runtime))
     if args.command == "sync":
+        if args.connector == "google-drive":
+            return _print(sync_google_drive(config, file_ids=args.paths or None, query=args.query, max_items=args.max_items))
+        if args.connector == "notion":
+            return _print(sync_notion(config, page_ids=args.paths or None, query=args.query, max_items=args.max_items))
         return _print(sync_local_sources(config, paths=args.paths or None, max_items=args.max_items))
     if args.command == "mcp":
         from .mcp_server import serve
@@ -78,6 +98,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.notification_command == "send":
             return _print(send_notification(config))
         return _print(install_schedule(config, runtime, args.time))
+    if args.command == "connectors":
+        if args.connector_name == "google-drive":
+            if args.connector_action == "import-client":
+                return _print(import_google_drive_client(config, args.client_file))
+            return _print(authorize_google_drive(config, timeout_seconds=args.timeout))
+        token = getpass.getpass("Paste Andy's Notion Personal Access Token (input is hidden): ")
+        return _print(configure_notion_token(config, token))
     return 2
 
 

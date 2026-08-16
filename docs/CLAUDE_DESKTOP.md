@@ -12,7 +12,7 @@ Claude may retrieve, compare, research, draft, and recommend. It does not silent
 
 For a normal review, Claude should:
 
-1. Call `sync_sources` only for the current question or workstream.
+1. Call only the relevant source tool—`sync_sources`, `sync_google_drive`, or `sync_notion`—for the current question or workstream.
 2. Compare temporary source excerpts with the refined Command Center and relevant workstreams.
 3. Explain the evidence and recommendation.
 4. Call `propose_workstream_update` or `propose_presentation_change`.
@@ -23,6 +23,8 @@ For a normal review, Claude should:
 ## Current tools
 
 - `sync_sources`
+- `sync_google_drive`
+- `sync_notion`
 - `get_command_center`
 - `list_proposals`
 - `propose_workstream_update`
@@ -32,7 +34,7 @@ For a normal review, Claude should:
 - `connector_status`
 - `create_connector_draft`
 
-The engine stores source metadata only. `sync_sources` returns temporary excerpts for the active tool call and does not archive the source body.
+The engine stores source metadata only. Every sync tool returns temporary excerpts for the active tool call and does not archive a source body. Google Drive and Notion must first be configured locally on Andy's Windows account; see [Connector setup](CONNECTORS.md).
 
 ## Continuing after a closed chat
 

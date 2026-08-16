@@ -4,6 +4,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 import sys
 
@@ -13,6 +14,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from brain.command_center import publish_command_center
 from brain.config import Config, RuntimeConfig
+from brain.connectors import connector_status, sync_google_drive, sync_notion
 from brain.ephemeral import sync_local_sources
 from brain.mcp_server import handle_request
 from brain.operations import apply_proposal, list_proposals, propose_presentation_change, propose_workstream_update, save_chat_handoff
@@ -153,6 +155,70 @@ class AndyBrainTests(unittest.TestCase):
             self.assertIn("need attention", summary["body"])
             script = review_task_script(config, runtime)
             self.assertIn("notifications summary", script.read_text(encoding="utf-8"))
+
+    def test_google_drive_sync_is_ephemeral_and_keeps_only_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config, _ = make_env(Path(directory))
+
+            def fake_json(method, url, headers, payload=None):
+                self.assertEqual(method, "GET")
+                self.assertIn("Bearer temporary-access-token", headers["Authorization"])
+                self.assertIn("/files?", url)
+                return {"files": [{"id": "drive-file-1", "name": "Michael market brief", "mimeType": "text/plain", "modifiedTime": "2026-08-16T10:00:00Z", "webViewLink": "https://drive.google.com/file/d/drive-file-1/view"}]}
+
+            def fake_bytes(method, url, headers):
+                self.assertIn("alt=media", url)
+                return b"Private market research with a pricing lead."
+
+            with patch("brain.connectors._google_access_token", return_value="temporary-access-token"):
+                result = sync_google_drive(config, request_json=fake_json, request_bytes=fake_bytes)
+            self.assertEqual(result["records"][0]["name"], "Michael market brief")
+            self.assertIn("Private market research", result["records"][0]["excerpt"])
+            ledger = (config.engine / "data/state/source-ledger.json").read_text(encoding="utf-8")
+            self.assertNotIn("Private market research", ledger)
+            self.assertIn("google_drive", ledger)
+
+    def test_notion_sync_is_ephemeral_and_reads_enhanced_markdown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config, _ = make_env(Path(directory))
+
+            def fake_json(method, url, headers, payload=None):
+                self.assertEqual(headers["Notion-Version"], "2026-03-11")
+                if url.endswith("/v1/search"):
+                    self.assertEqual(method, "POST")
+                    self.assertEqual(payload["filter"]["value"], "page")
+                    return {"results": [{"id": "notion-page-1", "url": "https://www.notion.so/notion-page-1", "last_edited_time": "2026-08-16T10:00:00Z", "properties": {"Name": {"type": "title", "title": [{"plain_text": "Michael meeting notes"}]}}}]}
+                self.assertTrue(url.endswith("/v1/pages/notion-page-1/markdown"))
+                return {"markdown": "Confidential note: validate the new market before Friday."}
+
+            with patch("brain.connectors._notion_headers", return_value={"Authorization": "Bearer temporary", "Notion-Version": "2026-03-11"}):
+                result = sync_notion(config, request_json=fake_json)
+            self.assertEqual(result["records"][0]["name"], "Michael meeting notes")
+            self.assertIn("Confidential note", result["records"][0]["excerpt"])
+            ledger = (config.engine / "data/state/source-ledger.json").read_text(encoding="utf-8")
+            self.assertNotIn("Confidential note", ledger)
+            self.assertIn("notion", ledger)
+
+    def test_connector_status_never_exposes_credentials(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config, _ = make_env(Path(directory))
+            write_json(
+                config.engine / "config/sources.local.json",
+                {"version": 1, "local_folders": [], "connectors": {"google_drive": {"status": "connected", "access_token": "must-not-leak"}, "notion": {"status": "connected", "client_secret": "must-not-leak"}}},
+            )
+            status = connector_status(config)
+            self.assertEqual(status["connectors"]["google_drive"]["mode"], "read_only")
+            self.assertNotIn("must-not-leak", json.dumps(status))
+
+    def test_mcp_exposes_drive_and_notion_sync_tools(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config, _ = make_env(Path(directory))
+            with patch("brain.mcp_server.sync_google_drive", return_value={"connector": "google_drive", "records": [], "temporary": True}) as drive_sync:
+                response = handle_request(config, {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "sync_google_drive", "arguments": {"query": "pricing"}}})
+            self.assertEqual(json.loads(response["result"]["content"][0]["text"])["connector"], "google_drive")
+            self.assertEqual(drive_sync.call_args.kwargs["query"], "pricing")
+            names = {tool["name"] for tool in handle_request(config, {"jsonrpc": "2.0", "id": 4, "method": "tools/list"})["result"]["tools"]}
+            self.assertTrue({"sync_google_drive", "sync_notion"}.issubset(names))
 
 
 if __name__ == "__main__":

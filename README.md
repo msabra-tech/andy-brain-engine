@@ -6,7 +6,7 @@ Claude is the assistant: it analyzes, groups, prioritizes, researches, and propo
 
 ## What it does
 
-- Retrieves current material from approved local folders without retaining raw copies.
+- Retrieves current material from approved local folders, Google Drive, and Notion without retaining raw copies.
 - Lets Claude propose workstream, research, priority, and Command Center updates.
 - Requires Andy's approval before a proposal changes the vault or any external source.
 - Saves refined Chat Handoffs so a new Claude conversation can continue after a shutdown.
@@ -29,6 +29,23 @@ py -3 scripts\setup_windows.py
 ```
 
 The setup flow creates a local Obsidian vault, ignored local configuration, temporary staging, and the Command Center. It does not copy source documents into the vault.
+
+## Source connectors
+
+The Google Drive and Notion connectors are read-only. They only deliver current excerpts to the active Claude review; the engine stores source metadata and hashes, not source bodies.
+
+On Andy's Windows machine, use the short commands below after setup:
+
+```powershell
+# Import a Google Desktop OAuth client JSON from the JDS Google Cloud project.
+brain connectors google-drive import-client C:\Path\to\google-desktop-client.json
+brain connectors google-drive authorize
+
+# Paste a Notion Personal Access Token at the hidden prompt.
+brain connectors notion authorize
+```
+
+Then Claude can use `sync_google_drive` or `sync_notion` through MCP, or Andy can run `brain sync --connector google-drive` / `brain sync --connector notion`. Setup details and the required provider-side steps are in [Connector setup](docs/CONNECTORS.md).
 
 ## Claude Desktop MCP
 

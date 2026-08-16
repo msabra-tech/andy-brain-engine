@@ -6,7 +6,8 @@ from typing import Any, Callable
 
 from .command_center import publish_command_center
 from .config import Config, load_config, load_runtime
-from .ephemeral import connector_status, draft_connector, sync_local_sources
+from .connectors import connector_status, sync_google_drive, sync_notion
+from .ephemeral import draft_connector, sync_local_sources
 from .operations import (
     apply_proposal,
     list_proposals,
@@ -23,6 +24,8 @@ SERVER_INFO = {"name": "andy-brain", "version": "0.1.0"}
 def tool_definitions() -> list[dict[str, Any]]:
     return [
         {"name": "sync_sources", "description": "Read current approved local-source excerpts for this review. Source bodies are not persisted.", "inputSchema": {"type": "object", "properties": {"paths": {"type": "array", "items": {"type": "string"}}, "max_items": {"type": "integer"}}}},
+        {"name": "sync_google_drive", "description": "Read current Google Drive content Andy has authorized into this review only. It is read-only and source bodies are not persisted.", "inputSchema": {"type": "object", "properties": {"file_ids": {"type": "array", "items": {"type": "string"}}, "query": {"type": "string"}, "max_items": {"type": "integer"}}}},
+        {"name": "sync_notion", "description": "Read current Notion pages visible to Andy's configured Personal Access Token into this review only. It is read-only and source bodies are not persisted.", "inputSchema": {"type": "object", "properties": {"page_ids": {"type": "array", "items": {"type": "string"}}, "query": {"type": "string"}, "max_items": {"type": "integer"}}}},
         {"name": "get_command_center", "description": "Return the current refined Obsidian Command Center.", "inputSchema": {"type": "object", "properties": {}}},
         {"name": "list_proposals", "description": "List proposed vault or presentation changes awaiting Andy approval.", "inputSchema": {"type": "object", "properties": {}}},
         {"name": "propose_workstream_update", "description": "Prepare a Claude-recommended workstream update. It is not written until apply_proposal is called with confirmation.", "inputSchema": {"type": "object", "required": ["title", "summary"], "properties": {"title": {"type": "string"}, "summary": {"type": "string"}, "priority": {"type": "string"}, "recommendation": {"type": "string"}, "people": {"type": "array", "items": {"type": "string"}}, "source_links": {"type": "array", "items": {"type": "string"}}, "open_threads": {"type": "array", "items": {"type": "string"}}, "research": {"type": "string"}}}},
@@ -41,6 +44,10 @@ def _text(payload: Any) -> dict[str, Any]:
 def call_tool(config: Config, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     if name == "sync_sources":
         return _text(sync_local_sources(config, paths=arguments.get("paths"), max_items=int(arguments.get("max_items", 20))))
+    if name == "sync_google_drive":
+        return _text(sync_google_drive(config, file_ids=arguments.get("file_ids"), query=arguments.get("query"), max_items=int(arguments.get("max_items", 20))))
+    if name == "sync_notion":
+        return _text(sync_notion(config, page_ids=arguments.get("page_ids"), query=arguments.get("query"), max_items=int(arguments.get("max_items", 20))))
     if name == "get_command_center":
         path = vault_path(config, "00 Command Center/Home.md")
         return _text({"path": str(path), "markdown": path.read_text(encoding="utf-8") if path.exists() else "Command Center has not been published yet."})

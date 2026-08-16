@@ -21,7 +21,7 @@ Expected local-only files are ignored by `.gitignore`.
 ## Create A Private Repo
 
 ```sh
-gh repo create personal-brain-engine --private --source=. --remote=origin --push
+gh repo create andy-brain-engine --private --source=. --remote=origin --push
 ```
 
 If the repository already exists:
