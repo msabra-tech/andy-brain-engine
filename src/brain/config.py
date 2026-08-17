@@ -16,25 +16,17 @@ class Config:
 
 @dataclass(frozen=True)
 class RuntimeConfig:
-    automatic_ingestion: bool = True
+    automatic_ingestion: bool = False
     automatic_publishing: bool = True
     automatic_reminders: bool = False
-    owner_name: str = "Owner"
-    vault_title: str = "Personal Brain"
-    reminder_list: str = "Personal Brain"
-    scan_interval_seconds: int = 60
-    stable_wait_seconds: int = 5
+    owner_name: str = "Andy"
+    vault_title: str = "Andy Brain"
+    scan_interval_seconds: int = 0
+    stable_wait_seconds: int = 0
     default_timezone: str = "UTC"
-    codex_executable: str = ""
     python3_executable: str = ""
-    shortcuts_executable: str = ""
-    osascript_executable: str = ""
-    codex_enabled: bool = True
-    plaud_mcp_status: str = "not_configured"
-    plaud_mcp_command: str = ""
-    plaud_mcp_notes: str = ""
-    runner_label: str = "com.personalbrain.inbox-runner"
-    runner_wrapper_name: str = "personal-brain-inbox-runner"
+    claude_desktop_enabled: bool = True
+    review_time: str = "09:00"
 
 
 def engine_root() -> Path:
@@ -59,10 +51,7 @@ def load_runtime(config: Config | None = None) -> RuntimeConfig:
         data: dict[str, Any] = {}
     else:
         data = json.loads(path.read_text(encoding="utf-8"))
-    data.setdefault("codex_executable", shutil.which("codex") or "/Applications/Codex.app/Contents/Resources/codex")
-    data.setdefault("python3_executable", shutil.which("python3") or "/usr/bin/python3")
-    data.setdefault("shortcuts_executable", shutil.which("shortcuts") or "/usr/bin/shortcuts")
-    data.setdefault("osascript_executable", shutil.which("osascript") or "/usr/bin/osascript")
+    data.setdefault("python3_executable", shutil.which("python") or shutil.which("python3") or "python")
     return RuntimeConfig(**{k: v for k, v in data.items() if k in RuntimeConfig.__dataclass_fields__})
 
 

@@ -1,5 +1,5 @@
 {
-  "bridge": "~/Library/Mobile Documents/com~apple~CloudDocs/Personal-Brain-Bridge",
-  "engine": "~/Projects/personal-brain-engine",
-  "vault": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Personal-Brain"
+  "bridge": "C:/Users/Andy/AppData/Local/AndyBrain/staging",
+  "engine": "C:/Tools/andy-brain-engine",
+  "vault": "C:/Users/Andy/Documents/Andy-Brain"
 }

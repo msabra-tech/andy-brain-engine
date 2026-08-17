@@ -1,97 +1,77 @@
-# Personal Brain Engine
+# Andy Brain Engine
 
-A local-first second-brain engine that maintains a clean Obsidian vault in iCloud Drive.
+Andy Brain is a Windows-local engine that helps Claude Desktop turn Andy's approved work sources into a refined Obsidian Command Center.
 
-The repo keeps software, raw archives, runtime state, and integrations outside Obsidian. The Obsidian vault stays human-facing: `Home`, `Today`, `Life`, `Work`, `Career`, `Projects`, `People`, `Ideas`, and `References`.
+Claude is the assistant: it analyzes, groups, prioritizes, researches, and proposes. The engine gives Claude controlled tools and renders approved results into Obsidian. Obsidian is the durable visual map.
 
-## Quick Start
+## What it does
 
-```sh
-git clone <repo-url>
-cd personal-brain-engine
-./scripts/setup.sh
+- Retrieves current material from approved local folders, Google Drive, and Notion without retaining raw copies.
+- Lets Claude propose workstream, research, priority, and Command Center updates.
+- Requires Andy's approval before a proposal changes the vault or any external source.
+- Saves refined Chat Handoffs so a new Claude conversation can continue after a shutdown.
+- Renders an Obsidian Command Center for Michael's asks, active work, open threads, and meeting preparation.
+- Creates a versioned presentation profile so Claude can evolve the map from a prompt.
+- Generates Windows Task Scheduler and native-notification scripts for daily review reminders.
+
+## Deliberate boundaries
+
+- No raw source archive, document mirror, iCloud bridge, Apple integration, or custom daily dashboard application.
+- No unattended Claude edits. Scheduled work may prepare a review, but Andy approves meaningful updates.
+- No credentials in this repository or vault.
+
+## Windows setup
+
+On Windows, run [Setup Andy Brain.cmd](<Setup Andy Brain.cmd>) or:
+
+```powershell
+py -3 scripts\setup_wizard.py
 ```
 
-Setup creates:
+The wizard creates a local Obsidian vault, ignored local configuration, temporary staging, a safe local output folder, and the Command Center. It can also connect Google Drive, Notion, local folders, and a daily Windows reminder. It does not copy source documents into the vault. The CLI fallback is `py -3 scripts\setup_windows.py`.
 
-- an Obsidian iCloud vault from `templates/vault`
-- an iCloud Drive bridge for captures
-- local config files
-- local engine state folders
-- an empty reminder queue
-- optional background LaunchAgent runner
+## Source connectors
 
-The setup script also prompts for PLAUD MCP status. It does not store PLAUD passwords, API keys, or tokens.
+Google Drive and Notion deliver current excerpts only to the active Claude review; the engine stores source metadata and hashes, not source bodies. They can also write a Claude-generated artifact only through a visible proposal and Andy's one-time confirmation for that specific write.
 
-## Core Commands
+On Andy's Windows machine, use the short commands below after setup:
 
-```sh
-./brain audit
-./brain ingest
-./brain publish
-./brain review
+```powershell
+# Import a Google Desktop OAuth client JSON from the JDS Google Cloud project.
+brain connectors google-drive import-client C:\Path\to\google-desktop-client.json
+brain connectors google-drive authorize
+
+# Paste a Notion Personal Access Token at the hidden prompt.
+brain connectors notion authorize
+```
+
+Then Claude can use `sync_google_drive` or `sync_notion` through MCP, or Andy can run `brain sync --connector google-drive` / `brain sync --connector notion`. Setup details and the required provider-side steps are in [Connector setup](docs/CONNECTORS.md).
+
+## Claude Desktop MCP
+
+After setup, configure Claude Desktop to run:
+
+```text
+python C:\Tools\andy-brain-engine\brain mcp
+```
+
+The MCP server provides controlled tools for source sync, Command Center context, priority and research updates, Chat Handoffs, presentation/system changes, and approval-gated external writes. See [Claude Desktop integration](docs/CLAUDE_DESKTOP.md) and [the product specification](docs/PRODUCT_SPEC.md).
+
+## Core commands
+
+```text
+brain publish
+brain sync
+brain mcp
+brain notifications summary
+brain notifications install --time 09:00
+brain verify
+```
+
+## Checks
+
+```text
+python3 -m unittest discover -s tests -p 'test_*.py'
+python3 scripts/setup.py --dry-run --owner-name "Example Owner" --vault-title "Example Brain" --yes
 ./brain verify
-./brain run-once
-./brain status
 ```
-
-## Runner Commands
-
-```sh
-./brain runner install
-./brain runner start
-./brain runner stop
-./brain runner restart
-./brain runner status
-./brain runner logs
-./brain runner run-now
-./brain runner uninstall
-```
-
-## Reminder Commands
-
-```sh
-./brain reminders doctor
-./brain reminders plan
-./brain reminders apply --dry-run
-./brain reminders apply --live
-./brain reminders status
-./brain reminders retry
-./brain reminders rollback-test
-```
-
-Markdown alone cannot create an iPhone push notification. Native notifications require Apple Reminders, Calendar, Shortcuts, an authorized MCP integration, or another external notification system.
-
-Automatic live reminders are disabled by default. Enable only after a successful live test and iPhone sync confirmation:
-
-```sh
-./brain config set automatic-reminders true
-```
-
-## Capture Format
-
-For the cleanest V1 behavior, save `.txt` or `.md` transcript files into the bridge inbox and use clear labels:
-
-```txt
-Task: prepare the sample dashboard before dinner
-Work: capture one client follow-up as a work note
-Career: save one portfolio idea for later
-Project: expand the AI Second Brain project map
-Person: ask which people notes should be tracked
-Idea: make unresolved items visible on the dashboard
-Reflection: the system should be honest about uncertain facts
-Decision: keep private account connections disabled until authorized
-Question: whether PLAUD export access is available
-Shopping list: add shampoo and soap.
-Remind me at 2026-07-20T19:30:00+03:00 to review the plan.
-```
-
-Raw audio can be placed in `inbox/audio`, but V1 does not transcribe audio by itself. Audio is archived and surfaced as an open question until a text transcript is supplied.
-
-## Docs
-
-- [Setup](docs/SETUP.md)
-- [PLAUD MCP](docs/PLAUD_MCP.md)
-- [GitHub release checklist](docs/GITHUB_RELEASE.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Data boundaries](docs/DATA_BOUNDARIES.md)
